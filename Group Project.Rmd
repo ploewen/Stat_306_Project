@@ -25,11 +25,11 @@ library(kableExtra)
 
 The threat of heart disease and heart failure deeply permeates modern society. According to the World Health Organization, heart disease causes 31% of deaths globally. In Canada, about 1 in every 12 adults over the age of 20 lives with heart disease. In Pakistan, where our data set is sourced, this number is much higher at 1 in every 4 middle-aged Pakistanis suffering from heart disease. In fact, this illness has seen an increase in prevalence in Pakistan in recent years and is now considered an epidemic by many medical professionals. Hospital readmissions are unfortunately common and represent a significant burden on the individual, the community, and the healthcare system. Patient education and awareness are a critical part of heart failure care as they can provide patients with more agency and effectiveness in self-management.
 
-For our final project in STAT 306, synthesizing what we've learned about finding relationships in data, we've decided to explore the "heart failure clinical records" data set. This data set contains the medical records of 299 heart failure patients admitted to the Institute of Cardiology and Allied Hospital in Faisalabad, Pakistan, between April and December 2015. Thirteen clinical features were collected during the patients' follow-up period: age, anaemia, high blood pressure, creatinine phosphokinase, diabetes, ejection fraction, platelets, sex, serum creatinine, serum sodium, smoking, length of follow-up period, and death event (if the patient deceased during the follow-up period). The motivation behind this analysis was to model patient mortality as a function of these clinical features and investigate the major risk factors associated with heart disease.
+For our final project in STAT 306, synthesizing what we've learned about finding relationships in data, we've decided to explore the "heart failure clinical records" data set. This data set contains the medical records of 299 heart failure patients admitted to the Institute of Cardiology and Allied Hospital in Faisalabad, Pakistan, between April and December 2015. Thirteen clinical features were collected during the patients' follow-up period: age, anaemia, high blood pressure, creatinine phosphokinase, diabetes, ejection fraction, platelets, sex, serum creatinine, serum sodium, smoking, length of follow-up period, and death event (if the patient deceased during the follow-up period), with survival of the patient taking a death event value of 0 and death taking value 1. The motivation behind this analysis was to model patient mortality as a function of these clinical features and investigate the major risk factors associated with heart disease.
 
 The aim of our project is to iteratively build multivariate logistic models with the data at hand to arrive at the most efficient relationship to predict a death event following heart failure. Our research question is: ***Which variables create the most efficient model to predict a death event in patients who have experienced heart failure?***
 
-The identification of these variables can help narrow the focus of clinical care by allowing physicians to predict the health and mortality of patients based on fewer clinical features. Creating more concise patient profiles to address the health outcomes of heart failure patients can alleviate the social and structural burdens this disease has on communities around the world. \vspace{0.5cm}
+The identification of these variables can help narrow the focus of clinical care by allowing physicians to predict the health and mortality of patients based on fewer clinical features. Creating more concise patient profiles to address the health outcomes of heart failure patients can alleviate the social and structural burdens heart disease has on communities around the world by allowing quicker and cheaper diagnoses as less tests must be done to predict death. \vspace{0.5cm}
 
 # Analysis
 
@@ -46,7 +46,7 @@ My_Theme = theme(
 ```
 
 ```{r}
-heart.data <- read.csv('https://raw.githubusercontent.com/ploewen/Stat_306_Project/389349ca0739a7d135d1c3ccb59e0abf991684fa/heart_failure_data.csv', header = TRUE)
+heart.data <- read.csv('heart_failure_data.csv', header = TRUE)
 
 heart.data$DEATH_EVENT = as.factor(heart.data$DEATH_EVENT)
 heart.data$age = as.numeric(heart.data$age)
@@ -178,7 +178,11 @@ ggplot(data = probs, aes(y = reorder(labels, prob), x = prob)) +
     My_Theme
 ```
 
-Once again, to verify this model, we tested the accuracy using the same data sets as we did with the AIC model.
+The formula of the model is given by 
+$$
+\hat{\pi} = \frac{e^{-2.349+0.049x - 0.062y + 0.644z}}{1 + e^{-2.349+0.049x - 0.062y + 0.644z}}
+$$
+where the variables $x$, $y$ and $z$ represent age, ejection fraction and serum creatinine respectively and $\hat{\pi}$ is the estimated probability of death. We tested the accuracy using the same data sets as we did with the AIC model and we achieved an overall accuracy of 83.8 percent with the following confusion matrix:
 
 ```{r}
 bic.model = glm(DEATH_EVENT ~ age + ejection_fraction + serum_creatinine, 
@@ -194,8 +198,6 @@ bic.pred = rep(0, dim(test)[1])
 bic.pred[bic.prob > 0.5] = 1
 mean(bic.pred == test$DEATH_EVENT)
 ```
-
-Using this model, we achieved an overall accuracy of 83.8 percent with the following confusion matrix:
 
 ```{r, include= TRUE, fig.width = 3, fig.height = 2, fig.cap = 'Confusion Matrix for Model 2 (BIC)'}
 bic.conf = melt(table(predicted = bic.pred, actual = test$DEATH_EVENT))
@@ -257,3 +259,25 @@ The output of the AIC model selection method provides a 7-variable model that us
 When looking at the confusion matrices of the model selected by AIC and BIC respectively, both models shared the same proportion of false positives but the proportion of false negatives for the BIC model was 11 percentage points lower that the AIC model, which was a significant improvement. Furthermore, with the BIC model having only 3 explanatory variables, as opposed to the AIC model's 7 explanatory variables, it had a better prediction accuracy than the AIC model. Coupled with the lower proportion of false negatives, we were able to conclude that the BIC model should be selected over the AIC model. Furthermore, we were able to improve the selected model through principal component analysis, thus improving the model's prediction accuracy to 86.7% and with a confusion matrix indicating an increase in the number of true negatives and a decrease in false positives. In short, this improved model serves as a more reliable and accurate model than that found with the AIC model selection method.
 
 Coming back to our research question of "Which variables create the most efficient model to predict a death event in patients who have experienced heart failure?", we were able to identify the variables that would create the most efficient model to predict a death event in patients who have experienced heart failure, those variables being the age of the patient (in years), ejection fraction (% of blood leaving the heart at each contraction), and serum creatinine (in mg/dL). \vspace{0.5cm}
+
+
+\vspace{5cm}
+# Apendix
+
+
+## Akaike Information Criterion
+The AIC for a given model with $p$ parameters is defined by
+$$
+AIC = -2(l(\hat \pi;y) -p)
+$$ 
+
+where $l(\hat{\pi};y)$ is the loglikelihood of data $y$ evaluated at the parameter values $\hat{\pi}$.
+\vspace{1cm}
+
+## Bayesian Information Criterion
+The BIC for a given model with $p$ parameters and $n$ data points is defined by
+$$
+BIC = -2l(\hat \pi;y) + p\log(n)
+$$ 
+
+where $l(\hat{\pi};y)$ is the loglikelihood of data $y$ evaluated at the parameter values $\hat{\pi}$.
