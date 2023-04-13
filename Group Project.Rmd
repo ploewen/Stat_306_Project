@@ -262,7 +262,7 @@ Coming back to our research question of "Which variables create the most efficie
 
 
 \vspace{5cm}
-# Apendix
+# Appendix
 
 
 ## Akaike Information Criterion
