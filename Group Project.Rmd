@@ -3,10 +3,11 @@ title: 'Logistic Regression: Death following Heart Failure'
 author: "Philip Loewen, Marisa Ortiz, Ci Xu, Rohan Joseph"
 date: "`r Sys.Date()`"
 output: pdf_document
+fontsize: 11pt
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, include= FALSE, fig.align='center', warning = FALSE, fig.width = 5, fig.height = 4)
+knitr::opts_chunk$set(echo = FALSE, include= FALSE, fig.align='center', warning = FALSE, fig.width = 5, fig.height = 4, fig.pos='H')
 ```
 
 ```{r cars}
@@ -16,32 +17,73 @@ library(BMA)
 library(ggplot2)
 library(reshape)
 library(caret)
+library(gridExtra)
+library(kableExtra)
 ```
+
+# Introduction
+
+The threat of heart disease and heart failure deeply permeates modern society. According to the World Health Organization, heart disease causes 31% of deaths globally. In Canada, about 1 in every 12 adults over the age of 20 lives with heart disease. In Pakistan, where our data set is sourced, this number is much higher at 1 in every 4 middle-aged Pakistanis suffering from heart disease. In fact, this illness has seen an increase in prevalence in Pakistan in recent years and is now considered an epidemic by many medical professionals. Hospital readmissions are unfortunately common and represent a significant burden on the individual, the community, and the healthcare system. Patient education and awareness are a critical part of heart failure care as they can provide patients with more agency and effectiveness in self-management.
+
+For our final project in STAT 306, synthesizing what we've learned about finding relationships in data, we've decided to explore the "heart failure clinical records" data set. This data set contains the medical records of 299 heart failure patients admitted to the Institute of Cardiology and Allied Hospital in Faisalabad, Pakistan, between April and December 2015. Thirteen clinical features were collected during the patients' follow-up period: age, anaemia, high blood pressure, creatinine phosphokinase, diabetes, ejection fraction, platelets, sex, serum creatinine, serum sodium, smoking, length of follow-up period, and death event (if the patient deceased during the follow-up period). The motivation behind this analysis was to model patient mortality as a function of these clinical features and investigate the major risk factors associated with heart disease.
+
+The aim of our project is to iteratively build multivariate logistic models with the data at hand to arrive at the most efficient relationship to predict a death event following heart failure. Our research question is: ***Which variables create the most efficient model to predict a death event in patients who have experienced heart failure?***
+
+The identification of these variables can help narrow the focus of clinical care by allowing physicians to predict the health and mortality of patients based on fewer clinical features. Creating more concise patient profiles to address the health outcomes of heart failure patients can alleviate the social and structural burdens this disease has on communities around the world. \vspace{0.5cm}
+
+# Analysis
 
 ## Data Exploration
 
-Based on our choice of Death Event as our response variable, we decided to use logistic regression for prediction, first we loaded the data and took a cursory look at it, we had 12 Explanatory Variables and the last column, Death Event as our Response Variable. In the model selection step, we will use the AIC/BIC method, and then choose the better one between these two methods.
+Firstly, we will visualize the data. Visualizing the data allows us to preemptively search for potential issues that we may encounter in the future. One common issue is not having representative data, as such we visualize the age distribution and the sex proportions in figure 1. We notice that there are quite a few more males than females in this data set. Although this is not necessarily a problem, we may want to be careful when creating our model as including sex as a variable might require attention.
 
 ```{r}
 options(na.action = na.omit)
 My_Theme = theme(
   axis.title.x = element_text(size = 5),
-  axis.text.x = element_text(size =5),
   axis.title.y = element_text(size = 5),
   plot.title = element_text(hjust = 0.5, size = 8))
 ```
 
 ```{r}
-heart.data <- read.csv('heart_failure_data.csv', header = TRUE)
+heart.data <- read.csv('https://raw.githubusercontent.com/ploewen/Stat_306_Project/389349ca0739a7d135d1c3ccb59e0abf991684fa/heart_failure_data.csv', header = TRUE)
 
 heart.data$DEATH_EVENT = as.factor(heart.data$DEATH_EVENT)
+heart.data$age = as.numeric(heart.data$age)
 head(heart.data)
 ```
 
+```{r, include= TRUE, fig.width = 15, fig.height = 4, fig.cap = 'Age and sex distributions'}
+temp = data.frame(age = heart.data$age, sex = as.factor(heart.data$sex), DEATH_EVENT = heart.data$DEATH_EVENT)
+levels(temp$sex) <- c('Female','Male')
+temp2 = data.frame(sex = c('Female','Male'),value =  c(summary(temp$sex)[1], summary(temp$sex)[2]))
+temp2$sex = as.factor(temp2$sex)
 
-We first calculate the correlation coefficient between each explanatory variable, and we can visualize the variance covariance matrix as a heatmap:
 
-```{r, include= TRUE, fig.height = 4, fig.width = 5.5}
+age <- ggplot(data = temp, aes(x = age)) +
+              geom_histogram(fill = '#1F78B4', colour = '#A6CEE3', bins = 30) +
+              labs(x = 'Age', y = 'Count')
+
+age.sex <- ggplot(data = temp, aes(x = age, fill = sex)) +
+              geom_histogram(position = 'dodge', bins = 15) +
+              labs(x = 'Age', y = 'Count') +
+              guides(fill=guide_legend(title="Sex")) +
+              scale_fill_brewer(palette = "Paired")
+
+sex <- ggplot(data = temp2, aes(x = '', y = value, fill = sex)) +
+            geom_bar(width = 1, stat = 'identity') +
+            coord_polar('y', start = 0) +
+            labs(x = ' ', y = ' ') +
+            guides(fill=guide_legend(title="Sex")) +
+            theme_void() +
+            scale_fill_brewer(palette = "Paired") 
+
+grid.arrange(age, age.sex, sex, ncol = 3)
+```
+
+Then we calculated the correlation coefficients between each explanatory variable, and visualized the variance-covariance matrix as a heatmap. We notice that the highest magnitude correlation between variables was 0.44 between sex and smoking. This correlation indicates that there is some correlation between sex and smoking, although this value is not very high so we shouldn't be worried about multi-collinearity in our models. Multicollinearity happens when variables are highly correlated, creating an inflation in the coeffecients and may lead to redundant terms in our model as one variable can predict the other.
+
+```{r, include= TRUE, fig.height = 3, fig.width = 4, fig.cap = 'Correlation Matrix for all Explanatory Variables'}
 cor.mat <- cor(heart.data[,-c(12,13)])
 melted.cor.mat <- melt(cor.mat, as.is = TRUE)
 
@@ -49,17 +91,17 @@ ggplot(data = melted.cor.mat, aes(x = X1, y = X2, fill = value)) +
     geom_tile() +
     theme(axis.text.x = element_text(angle = 45, hjust=1)) +
     scale_fill_distiller(palette = 'RdYlBu') +
-    labs(title = 'Correlation matrix of explanatory variables', x = NULL, y = NULL) +
+    labs(title = 'Figure 1: Correlation Matrix for all Explanatory Variables', x = NULL, y = NULL) +
     My_Theme
 ```
 
-We notice that the highest magnetude correlation between variables is 0.44 between sex and smoking. This correlation would indicate that there is some correlation between sex and smoking, although this value is not very high so we shouldn't be worried about multicollinearity in our models. Multicollinearity happens when variables are highly correlated, creating an inflation in the coeffecients and leads to redundant terms in our model as one variable can predict the other.
 \vspace{0.5cm}
-
 
 ## Model Selection
 
-For testing purposes, first the data will be split into two different datasets: a training dataset and a testing dataset. These two initial splits will be used to verify all models used so we can compare them fairly against each other.
+Based on our choice of death event as our response variable, we decided to use logistic regression for prediction, first we loaded the data and took a cursory look at it, we had 12 explanatory variables and the last column, death event as our response variable. In the model selection step, we used the AIC and BIC (Akaike and Bayesian Information Criterion, respectively) methods, and chose the better selection method between these two.
+
+For testing purposes, first the data was split into two different datasets: a training dataset and a testing dataset. These two initial splits were used to verify all models used so we could compare them fairly against each other.
 
 ```{r}
 set.seed(9054)
@@ -70,9 +112,9 @@ test   <- heart.data[!sample, ]
 
 \vspace{0.5cm}
 
-### Method 1: Selection Through Akaike information criterion
+### Method 1: Selection through the Akaike Information Criterion (AIC)
 
-Akaike information criterion (AIC) is a criterion that is based on the negative log-likelihood and the quantity of variables used. The AIC penalizes the model as the number of explanatory variables increases. As such, a model with less variables will be less penalized than a model with many variables. When comparing models, a smaller AIC indicates a better fit.
+The Akaike Information Criterion (AIC) is a criterion that is based on the negative log-likelihood and the quantity of variables used. The AIC penalizes the model as the number of explanatory variables increases. As such, a model with less variables will be less penalized than a model with many variables. When comparing models, a smaller AIC indicates a better overall fit.
 
 ```{r}
 heart.model <- glm(DEATH_EVENT ~ . - time, data = train, family = 'binomial')
@@ -80,9 +122,9 @@ aic.model <- step(heart.model, trace = 0, direction = 'both')
 summary(aic.model)
 ```
 
-Using the step() we may use a stepwise algorithm to choose a model by AIC. The output of this function tells us we should use a 7 variable model with an AIC of 250,87, that uses age, anaemia, creatinine phosphokinase, ejection fraction, high blood pressure, serum creatinine and serum sodium. However, 4 of those variables have a p-values above 0.05, hence the coefficients variables are not statistically significant and we may be able remove them.
+Using the step() function we used a stepwise algorithm to choose a model by AIC. The output of this function told us that we should use a 7 variable model with an AIC of 250.87, that uses age, anaemia, creatinine phosphokinase, ejection fraction, high blood pressure, serum creatinine and serum sodium. However, 4 of those variables had a p-value above 0.05, hence these coefficients variables are not statistically significant and we may be able remove them.
 
-We can run a test to see if we should remove them based on accuracy of the model using our testing data, and comparing this model to subsequent models. By classifying any predicted probabilities over 0.5 as a prediction of death after heart failure, we achieve an accuracy of 80.8%, with the following confusion matrix:
+We then ran a test to see if we should remove them based on accuracy of the model using our testing data, and comparing this model to subsequent models. By classifying any predicted probabilities over 0.5 as a prediction of death after heart failure, we achieved an accuracy of 80.8%, with the following confusion matrix:
 
 ```{r}
 aic.prob = predict(aic.model, test, type = 'response')
@@ -92,7 +134,7 @@ aic.pred[aic.prob > 0.5] = 1
 mean(aic.pred == test$DEATH_EVENT)
 ```
 
-```{r, include= TRUE, fig.height = 2, fig.width = 3}
+```{r, include= TRUE, fig.height = 2, fig.width = 3, fig.cap = 'Confusion matrix for Model 1 (AIC)'}
 aic.conf = melt(table(predicted = aic.pred, actual = test$DEATH_EVENT))
 aic.conf$predicted = as.factor(aic.conf$predicted)
 aic.conf$actual = as.factor(aic.conf$actual)
@@ -101,44 +143,42 @@ options(repr.plot.width = 6, repr.plot.height = 5)
 ggplot(data = aic.conf, aes(x = actual, y = predicted, fill = value)) + 
     geom_tile() +
     geom_text(aes(label = value), color = "white", size = 6) +
-    labs(title = 'Confusion matrix for model 2', x = 'Actual Death Event', y = 'Predicted Death Event') +
+    labs(x = 'Actual Death Event', y = 'Predicted Death Event') +
     My_Theme
 ```
 
-This confusion matrix tells us the proportion of a false positives, given that there was not a death event is 0.102, and the proportion of false negatives given there was a death event is 0.421. This is quite high and so it would be good to explore the alternative method of variable selection which is using BIC.
-\vspace{0.5cm}
+This confusion matrix told us that the proportion of false positives given that there was a death event was 0.102, and the proportion of false negatives given that there was a death event was 0.421. This was quite high, so it would be good to explore the alternative method of variable selection, which in this case was using the BIC model selection method. \vspace{0.5cm}
 
+### Method 2: Selection through the Bayesian Information Criterion (BIC)
 
-### Method 2: Selection Through Bayesian Information Criterion
-
-Bayesian Information Criterion (BIC) is a creterion that is very similar to AIC as it is based on the likelihood but it places models with many variables more than AIC does. When using the BIC as model selection criteria, we may calculate the posterior probability of each variable and of all models, and select the model with the highest posterior probability.
+The Bayesian Information Criterion (BIC) is a criterion that is very similar to AIC as it is based on the likelihood but it places models with many variables more than AIC does. When using the BIC as model selection criteria, we may calculate the posterior probability of each variable and of all models, and select the model with the highest posterior probability.
 
 ```{r}
 bic.selection <- bic.glm(DEATH_EVENT ~ . - time, data = train, glm.family = 'binomial')
 summary(bic.selection)
 ```
 
-```{r, include = TRUE, fig.height = 7, fig.width = 10}
-plot(bic.selection)
+```{r, include = TRUE, fig.height = 6, fig.width = 8, fig.cap= 'Posterior Distributions for some Explanatory Variables'}
+plot(bic.selection, include = c(1:9))
 ```
 
-The posterior distributions displayed above show that age, ejection fraction and serum creatinine have very small mass at 0, which indicates that these variables should be included in the model, whereas the other variables have a larger mass at 0, indicating they might not be included in the model. We can then look at the posterior probabilities for our models by showing the value of 'post prob' of 5 models in a histogram.
+The posterior distributions displayed above showed that age, ejection fraction and serum creatinine had very small mass at 0, which indicated that these variables should be included in the model, whereas the other variables had a larger mass at 0, indicating they might not be included in the model. We can then looked at the posterior probabilities for our models by showing the value of 'post prob' of 5 models in a histogram.
 
-Based on Bayesian posterior probabilities of the models, the selected model is the model containaing age, ejection_fraction and serum_creatinine. We can see that this model's posterior probability is about 3 to 5 times higher than the other four models, hence we choose this model and compare it with the previous model chosen by AIC.
+Based on Bayesian posterior probabilities of the models, the selected model is the model containaing age, ejection fraction and serum creatinine. We can see that this model's posterior probability is about 3 to 5 times higher than the other four models, hence we choose this model and compare it with the previous model chosen by AIC.
 
-```{r, include= TRUE, fig.height = 3, fig.width = 10}
+```{r, include= TRUE, fig.height = 3, fig.width = 10, fig.cap= '5 Highest Posterior Probability Models'}
 probs = data.frame(prob = bic.selection$postprob, labels = bic.selection$label)[1:5,]
 
 
 options(repr.plot.width = 12, repr.plot.height = 7)
 ggplot(data = probs, aes(y = reorder(labels, prob), x = prob)) + 
-    geom_col(fill = 'steelblue4') +
-    labs(title = '5 highest posterior probability models', y = 'Model', x = 'Posterior Probability') +
+    geom_col(fill = '#1F78B4') +
+    labs(y = 'Model', x = 'Posterior Probability') +
     theme(axis.text.y = element_text(angle = 0, hjust=1)) +
     My_Theme
 ```
 
-Once again, to verify this model, we can test the accuracy using the same data sets as we did with the AIC model.
+Once again, to verify this model, we tested the accuracy using the same data sets as we did with the AIC model.
 
 ```{r}
 bic.model = glm(DEATH_EVENT ~ age + ejection_fraction + serum_creatinine, 
@@ -155,9 +195,9 @@ bic.pred[bic.prob > 0.5] = 1
 mean(bic.pred == test$DEATH_EVENT)
 ```
 
-Using this model, we achieve an overall accuracy of 83.8 percent with the following confusion matrix:
+Using this model, we achieved an overall accuracy of 83.8 percent with the following confusion matrix:
 
-```{r, include= TRUE, fig.width = 3, fig.height = 2}
+```{r, include= TRUE, fig.width = 3, fig.height = 2, fig.cap = 'Confusion Matrix for Model 2 (BIC)'}
 bic.conf = melt(table(predicted = bic.pred, actual = test$DEATH_EVENT))
 bic.conf$predicted = as.factor(bic.conf$predicted)
 bic.conf$actual = as.factor(bic.conf$actual)
@@ -166,21 +206,19 @@ options(repr.plot.width = 6, repr.plot.height = 5)
 ggplot(data = bic.conf, aes(x = actual, y = predicted, fill = value)) + 
     geom_tile() +
     geom_text(aes(label = value), color = "white", size = 6) +
-    labs(title = 'Confusion matrix for model 2', 
-         x = 'Actual Death Event', y = 'Predicted Death Event') +
+    labs(x = 'Actual Death Event', y = 'Predicted Death Event') +
     My_Theme
 ```
 
-Here we have the same proportion of false postiives, but the proportion of false negatives is 11 percentage points lower, which is a great improvement from the model found using AIC. Although our second model has less variables included, it actually has a better prediction accuracy than that found using AIC, as well as a lower proportion of false negatives. Hence we should take this one over the model found in Method 1.
-\vspace{0.5cm}
+Here we have the same proportion of false postives, but the proportion of false negatives is 11 percentage points lower, which is a great improvement from the model found using AIC. Although our second model had less variables included, it actually had a better prediction accuracy than that found using AIC, as well as a lower proportion of false negatives. Hence we should take this one over the model found in Method 1. \vspace{0.5cm}
 
-### Improving the model through Principal Component Analysis
+### Improving the Model through Principal Component Analysis
 
-Principle component analysis allows us to reduce the dimensions of the data by rotating the axes so that the first principle component is now the axis with the most variation in the data, and the second principle component will be the second axis will be an axis that is orthogonal to the first axis. Doing this allows to reduce noise in the data and improve prediction rates.
+Principle component analysis allows us to reduce the dimensions of the data by rotating the axes so that the first principle component is now the axis with the most variation in the data, and the second principle component will be the second axis will be an axis that is orthogonal to the first axis. Doing this allows us to reduce noise in the data and improve prediction rates.
 
-Using the first two components and discarding the third would keep 70% of the variability of the data. Using these two components as explanatory variables for our model leads to a prediction rate of 86.7% and the following confusion matrix:
+Using the first two components and discarding the third would keep 70% of the variability of the data. Using these two components as explanatory variables for our model leds to a prediction rate of 86.7% and the following confusion matrix:
 
-```{r, include= TRUE, fig.height = 2, fig.width = 3}
+```{r, include= TRUE, fig.height = 2, fig.width = 3, fig.cap = ' Confusion Matrix for Model 2 after PCA'}
 cols = c('age', 'ejection_fraction', 'serum_creatinine')
 pc = princomp(train[,cols], cor = T)
 
@@ -203,8 +241,19 @@ pc.conf[,3] = round(pc.conf[,3],3)
 ggplot(data = pc.conf, aes(x = actual, y = predicted, fill = value)) + 
     geom_tile() +
     geom_text(aes(label = value), color = "white", size = 6) +
-    labs(title = 'Confusion matrix for model 3', x = 'Actual Death Event', y = 'Predicted Death Event') +
+    labs(x = 'Actual Death Event', y = 'Predicted Death Event') +
     My_Theme
 ```
 
-Using principal component analysis, we are able to increase the number of true negatives and decrease the number of false positives by 2, which is an increase by 4 percentage points. Overall this is a great improvement and more reliable model than that found with the first method.
+Using principal component analysis, we were are able to increase the number of true negatives and decrease the number of false positives by 2, which is an increase by 4 percentage points. Overall this was a great improvement, and more reliable and accurate model than that found with the first method. 
+\vspace{1cm}
+
+# Conclusion
+
+To reiterate, our research question was: Which variables create the most efficient model to predict a death event in patients who have experienced heart failure? Our project aimed to iteratively build multivariate logistic models with the "heart failure clinical records" dataset in order to arrive at the most efficient relationship to predict a death event following heart failure. With the death event as our response variable and with 12 explanatory variables, we used the AIC and BIC (Akaike and Bayesian Information Criterion, respectively) model selection methods to choose the best model to predict a death event.
+
+The output of the AIC model selection method provides a 7-variable model that uses age, anemia, creatinine phosphokinase, ejection fraction, high blood pressure, serum creatinine, and serum sodium, however, 4 of these variables (age, anaemia, high blood pressure, and serum sodium) had p-values above 0.05 indicating that they were not statistically significant and could be removed from the final model. After classifying any predicted probabilities over 0.5 as a prediction of death after heart failure, this model was able to achieve a prediction accuracy of 80.8% against the testing dataset. In contrast, the output of the BIC model selection method was able to select a model with a prediction accuracy of 83.8% against the testing dataset, selecting a model containing age, ejection fraction and serum creatinine.
+
+When looking at the confusion matrices of the model selected by AIC and BIC respectively, both models shared the same proportion of false positives but the proportion of false negatives for the BIC model was 11 percentage points lower that the AIC model, which was a significant improvement. Furthermore, with the BIC model having only 3 explanatory variables, as opposed to the AIC model's 7 explanatory variables, it had a better prediction accuracy than the AIC model. Coupled with the lower proportion of false negatives, we were able to conclude that the BIC model should be selected over the AIC model. Furthermore, we were able to improve the selected model through principal component analysis, thus improving the model's prediction accuracy to 86.7% and with a confusion matrix indicating an increase in the number of true negatives and a decrease in false positives. In short, this improved model serves as a more reliable and accurate model than that found with the AIC model selection method.
+
+Coming back to our research question of "Which variables create the most efficient model to predict a death event in patients who have experienced heart failure?", we were able to identify the variables that would create the most efficient model to predict a death event in patients who have experienced heart failure, those variables being the age of the patient (in years), ejection fraction (% of blood leaving the heart at each contraction), and serum creatinine (in mg/dL). \vspace{0.5cm}
